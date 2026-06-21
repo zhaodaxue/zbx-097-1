@@ -2,6 +2,8 @@ import type { Quarter, Application, Category } from '../shared/types.js';
 import { STALL_CONFIG } from '../shared/types.js';
 
 const quarters = new Map<string, Quarter>();
+const applicationCounters = new Map<string, number>();
+const ADMIN_PASSWORD = 'admin123';
 
 function generateQuarterId(): string {
   const now = new Date();
@@ -10,8 +12,11 @@ function generateQuarterId(): string {
   return `${year}-Q${q}`;
 }
 
-function generateApplicationId(index: number): string {
-  return `APP-${String(index + 1).padStart(4, '0')}`;
+function generateApplicationId(quarterId: string): string {
+  const current = applicationCounters.get(quarterId) ?? 0;
+  const next = current + 1;
+  applicationCounters.set(quarterId, next);
+  return `APP-${String(next).padStart(4, '0')}`;
 }
 
 function createMockApplications(): Application[] {
@@ -42,7 +47,7 @@ function createMockApplications(): Application[] {
   ];
 
   return mockData.map((d, i) => ({
-    id: generateApplicationId(i),
+    id: `APP-${String(i + 1).padStart(4, '0')}`,
     vendorId: d.vendorId,
     category: d.category,
     originalStallNumber: d.originalStallNumber,
@@ -64,15 +69,18 @@ function initDefaultQuarter(): Quarter {
     archivedAt: Date.now() - 86400000 * 90,
   };
   quarters.set(existing.id, existing);
+  applicationCounters.set(existing.id, 0);
 
+  const mockApps = createMockApplications();
   const quarter: Quarter = {
     id,
     name: `${new Date().getFullYear()}年第${Math.floor(new Date().getMonth() / 3) + 1}季度`,
     status: 'collecting',
     categoryStalls: JSON.parse(JSON.stringify(STALL_CONFIG)),
-    applications: createMockApplications(),
+    applications: mockApps,
   };
   quarters.set(quarter.id, quarter);
+  applicationCounters.set(quarter.id, mockApps.length);
   return quarter;
 }
 
@@ -89,7 +97,7 @@ export const store = {
 
   getActiveQuarter(): Quarter | undefined {
     const list = this.getQuarters();
-    return list.find(q => q.status !== 'archived') || list[0];
+    return list.find(q => q.status !== 'archived');
   },
 
   createQuarter(data: { name: string; lotteryDate?: string }): Quarter {
@@ -103,6 +111,7 @@ export const store = {
       applications: [],
     };
     quarters.set(id, quarter);
+    applicationCounters.set(id, 0);
     return quarter;
   },
 
@@ -110,7 +119,13 @@ export const store = {
     const q = quarters.get(id);
     if (!q) return undefined;
     if (q.status === 'archived') throw new Error('已归档季度不可修改');
-    const updated = { ...q, ...data };
+    if (data.status && data.status === 'archived') throw new Error('不可直接设置为归档状态');
+    if (data.status && q.status === 'published' && data.status !== 'published') throw new Error('已公示季度不可回退状态');
+    const safeData: Partial<Quarter> = {};
+    if (data.name !== undefined) safeData.name = data.name;
+    if (data.lotteryDate !== undefined) safeData.lotteryDate = data.lotteryDate;
+    if (data.status !== undefined && q.status === 'collecting' && data.status === 'collecting') safeData.status = data.status;
+    const updated = { ...q, ...safeData };
     quarters.set(id, updated);
     return updated;
   },
@@ -128,8 +143,12 @@ export const store = {
     const q = quarters.get(quarterId);
     if (!q) return undefined;
     if (q.status !== 'collecting') throw new Error('当前状态不可添加申请');
+    const validCategories: Category[] = ['vegetable', 'seafood', 'deli'];
+    if (!validCategories.includes(data.category)) throw new Error('非法品类');
+    const exists = q.applications.some(a => a.vendorId === data.vendorId);
+    if (exists) throw new Error('同一摊主不可重复申请同季度');
     const app: Application = {
-      id: generateApplicationId(q.applications.length),
+      id: generateApplicationId(quarterId),
       vendorId: data.vendorId,
       category: data.category,
       originalStallNumber: data.originalStallNumber,
@@ -149,6 +168,14 @@ export const store = {
     if (q.status !== 'collecting') throw new Error('当前状态不可修改申请');
     const idx = q.applications.findIndex(a => a.id === appId);
     if (idx === -1) return undefined;
+    if (data.category) {
+      const validCategories: Category[] = ['vegetable', 'seafood', 'deli'];
+      if (!validCategories.includes(data.category)) throw new Error('非法品类');
+    }
+    if (data.vendorId && data.vendorId !== q.applications[idx].vendorId) {
+      const exists = q.applications.some(a => a.vendorId === data.vendorId);
+      if (exists) throw new Error('同一摊主不可重复申请同季度');
+    }
     q.applications[idx] = { ...q.applications[idx], ...data };
     return q.applications[idx];
   },
@@ -165,6 +192,9 @@ export const store = {
   saveResults(quarterId: string, results: Quarter['results']): Quarter | undefined {
     const q = quarters.get(quarterId);
     if (!q) return undefined;
+    if (q.status !== 'collecting') throw new Error('仅收集期季度可执行抽签');
+    if (q.results) throw new Error('抽签已执行，不可重复执行');
+    if (!q.lotteryDate) throw new Error('请先设定抽签日期');
     q.results = results;
     if (results) {
       const map = new Map<string, Application>();
@@ -174,5 +204,9 @@ export const store = {
     q.status = 'published';
     quarters.set(quarterId, q);
     return q;
+  },
+
+  verifyAdmin(password: string): boolean {
+    return password === ADMIN_PASSWORD;
   },
 };

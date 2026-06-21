@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { store } from '../store.js';
 import { executeLottery, exportToCsv } from '../lottery.js';
 import type { Category } from '../../shared/types.js';
+import { requireAuth } from './auth.js';
 
 const router = Router();
 
@@ -25,7 +26,7 @@ router.get('/active', (req: Request, res: Response): void => {
   try {
     const q = store.getActiveQuarter();
     if (!q) {
-      res.status(404).json({ success: false, error: '未找到季度' });
+      res.json({ success: true, data: null });
       return;
     }
     res.json({ success: true, data: q });
@@ -47,7 +48,7 @@ router.get('/:id', (req: Request, res: Response): void => {
   }
 });
 
-router.post('/', (req: Request, res: Response): void => {
+router.post('/', requireAuth, (req: Request, res: Response): void => {
   try {
     const { name, lotteryDate } = req.body;
     if (!name) {
@@ -61,7 +62,7 @@ router.post('/', (req: Request, res: Response): void => {
   }
 });
 
-router.put('/:id', (req: Request, res: Response): void => {
+router.put('/:id', requireAuth, (req: Request, res: Response): void => {
   try {
     const q = store.updateQuarter(req.params.id, req.body);
     if (!q) {
@@ -74,7 +75,7 @@ router.put('/:id', (req: Request, res: Response): void => {
   }
 });
 
-router.post('/:id/archive', (req: Request, res: Response): void => {
+router.post('/:id/archive', requireAuth, (req: Request, res: Response): void => {
   try {
     const q = store.archiveQuarter(req.params.id);
     if (!q) {
@@ -105,7 +106,7 @@ router.get('/:id/applications', (req: Request, res: Response): void => {
   }
 });
 
-router.post('/:id/applications', (req: Request, res: Response): void => {
+router.post('/:id/applications', requireAuth, (req: Request, res: Response): void => {
   try {
     const { vendorId, category, originalStallNumber, priorityRenewal, consecutiveMissedQuarters } = req.body;
     if (!vendorId || !category) {
@@ -129,7 +130,7 @@ router.post('/:id/applications', (req: Request, res: Response): void => {
   }
 });
 
-router.put('/:id/applications/:appId', (req: Request, res: Response): void => {
+router.put('/:id/applications/:appId', requireAuth, (req: Request, res: Response): void => {
   try {
     const app = store.updateApplication(req.params.id, req.params.appId, req.body);
     if (!app) {
@@ -142,7 +143,7 @@ router.put('/:id/applications/:appId', (req: Request, res: Response): void => {
   }
 });
 
-router.delete('/:id/applications/:appId', (req: Request, res: Response): void => {
+router.delete('/:id/applications/:appId', requireAuth, (req: Request, res: Response): void => {
   try {
     const ok = store.deleteApplication(req.params.id, req.params.appId);
     if (!ok) {
@@ -155,7 +156,7 @@ router.delete('/:id/applications/:appId', (req: Request, res: Response): void =>
   }
 });
 
-router.post('/:id/draw', (req: Request, res: Response): void => {
+router.post('/:id/draw', requireAuth, (req: Request, res: Response): void => {
   try {
     const q = store.getQuarter(req.params.id);
     if (!q) {

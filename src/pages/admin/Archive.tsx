@@ -78,7 +78,7 @@ export default function ArchivePage() {
 
             <div className="flex gap-2">
               <button
-                onClick={() => navigate('/admin/results')}
+                onClick={() => navigate(`/admin/results?quarter=${q.id}`)}
                 className="btn-secondary flex-1 text-sm py-2 flex items-center justify-center gap-1.5"
               >
                 <Eye className="w-4 h-4" />

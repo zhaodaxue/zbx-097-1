@@ -1,11 +1,13 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Home from '@/pages/Home';
 import AdminLayout from '@/components/AdminLayout';
+import ProtectedRoute from '@/components/ProtectedRoute';
 import Dashboard from '@/pages/admin/Dashboard';
 import Applications from '@/pages/admin/Applications';
 import Lottery from '@/pages/admin/Lottery';
 import Results from '@/pages/admin/Results';
 import ArchivePage from '@/pages/admin/Archive';
+import AdminLogin from '@/pages/admin/Login';
 import VendorHome from '@/pages/vendor/VendorHome';
 import VendorResult from '@/pages/vendor/VendorResult';
 import PublicDisplay from '@/pages/PublicDisplay';
@@ -16,7 +18,16 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
 
-        <Route path="/admin" element={<AdminLayout />}>
+        <Route path="/admin/login" element={<AdminLogin />} />
+
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute>
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        >
           <Route index element={<Dashboard />} />
           <Route path="applications" element={<Applications />} />
           <Route path="lottery" element={<Lottery />} />

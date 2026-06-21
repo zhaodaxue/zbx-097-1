@@ -9,17 +9,23 @@ import {
   Store,
   MonitorPlay,
   LogOut,
+  User as UserIcon,
 } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { QUARTER_STATUS_LABELS } from 'shared/types';
 
 export default function AdminLayout() {
   const navigate = useNavigate();
-  const { activeQuarter, fetchActiveQuarter } = useAppStore();
+  const { activeQuarter, fetchActiveQuarter, adminUsername, logout } = useAppStore();
 
   useEffect(() => {
     fetchActiveQuarter();
   }, [fetchActiveQuarter]);
+
+  async function handleLogout() {
+    await logout();
+    navigate('/admin/login', { replace: true });
+  }
 
   const navItems = [
     { to: '/admin', icon: LayoutDashboard, label: '概览' },
@@ -78,15 +84,26 @@ export default function AdminLayout() {
             <MonitorPlay className="w-4.5 h-4.5" />
             <span>公示大屏</span>
           </button>
+        </nav>
 
+        <div className="px-3 py-4 border-t border-gray-100">
+          <div className="mb-3 px-3 py-2 rounded-lg bg-gray-50 flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
+              <UserIcon className="w-4 h-4 text-primary-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-900 truncate">{adminUsername || '管理员'}</p>
+              <p className="text-xs text-gray-400">系统管理员</p>
+            </div>
+          </div>
           <button
-            onClick={() => navigate('/')}
-            className="nav-item w-full text-left"
+            onClick={handleLogout}
+            className="nav-item w-full text-left text-gray-500 hover:text-red-600 hover:bg-red-50"
           >
             <LogOut className="w-4.5 h-4.5" />
-            <span>返回首页</span>
+            <span>退出登录</span>
           </button>
-        </nav>
+        </div>
       </aside>
 
       <main className="flex-1 overflow-auto">

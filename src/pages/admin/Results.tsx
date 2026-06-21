@@ -1,20 +1,58 @@
 import { useEffect, useState } from 'react';
-import { Download, Filter, Trophy, Clock, XCircle, Search } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Download, Filter, Trophy, Clock, XCircle, Search, ChevronDown } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { api } from '@/lib/api';
-import type { Application, Category } from 'shared/types';
-import { CATEGORY_LABELS, STATUS_LABELS } from 'shared/types';
+import type { Application, Category, Quarter } from 'shared/types';
+import { CATEGORY_LABELS, STATUS_LABELS, QUARTER_STATUS_LABELS } from 'shared/types';
 
 export default function Results() {
-  const { activeQuarter, fetchActiveQuarter } = useAppStore();
+  const { activeQuarter, quarters, fetchQuarters, fetchActiveQuarter } = useAppStore();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedQuarterId, setSelectedQuarterId] = useState<string | null>(searchParams.get('quarter') || null);
+  const [selectedQuarter, setSelectedQuarter] = useState<Quarter | null>(null);
   const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all');
   const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    fetchQuarters();
     fetchActiveQuarter();
-  }, [fetchActiveQuarter]);
+  }, [fetchQuarters, fetchActiveQuarter]);
 
-  const q = activeQuarter;
+  useEffect(() => {
+    const qid = searchParams.get('quarter');
+    if (qid) {
+      setSelectedQuarterId(qid);
+    } else if (activeQuarter) {
+      setSelectedQuarterId(activeQuarter.id);
+    }
+  }, [searchParams, activeQuarter]);
+
+  useEffect(() => {
+    if (!selectedQuarterId) return;
+    let cancelled = false;
+    setLoading(true);
+    api.getQuarter(selectedQuarterId)
+      .then(q => {
+        if (!cancelled) setSelectedQuarter(q);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedQuarterId]);
+
+  function handleQuarterChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const id = e.target.value;
+    if (id) {
+      setSearchParams({ quarter: id });
+    } else {
+      setSearchParams({});
+    }
+  }
+
+  const q = selectedQuarter;
   const results = q?.results;
 
   function filter(list: Application[]) {
@@ -43,14 +81,30 @@ export default function Results() {
             {q?.name} · {results ? `中签 ${results.winning.length} / 候补 ${results.waiting.length} / 未中签 ${results.failed.length}` : '暂无结果'}
           </p>
         </div>
-        <button
-          onClick={handleExport}
-          disabled={!results}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Download className="w-4 h-4" />
-          导出 CSV
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <select
+              value={selectedQuarterId || ''}
+              onChange={handleQuarterChange}
+              className="select-field pr-9 min-w-[180px]"
+            >
+              {quarters.map(qt => (
+                <option key={qt.id} value={qt.id}>
+                  {qt.name} - {QUARTER_STATUS_LABELS[qt.status]}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+          <button
+            onClick={handleExport}
+            disabled={!results}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Download className="w-4 h-4" />
+            导出 CSV
+          </button>
+        </div>
       </div>
 
       {results && (
