@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shuffle, Calendar, AlertCircle, Clock, CheckCircle2, Info } from 'lucide-react';
+import { Shuffle, Calendar, AlertCircle, Clock, CheckCircle2, Info, XCircle, X, AlertTriangle } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { api } from '@/lib/api';
+import { runPrecheck } from '@/lib/precheck';
 import { QUARTER_STATUS_LABELS } from 'shared/types';
 
 export default function Lottery() {
@@ -12,6 +13,7 @@ export default function Lottery() {
   const [drawing, setDrawing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [showWarningConfirm, setShowWarningConfirm] = useState(false);
 
   useEffect(() => {
     fetchActiveQuarter();
@@ -25,7 +27,8 @@ export default function Lottery() {
   }, [activeQuarter?.id, activeQuarter?.lotteryDate]);
 
   const q = activeQuarter;
-  const canDraw = q && q.status === 'collecting' && q.applications.length > 0;
+  const precheck = runPrecheck(q);
+  const canDraw = q && q.status === 'collecting' && q.applications.length > 0 && !precheck.hasBlocker;
   const canSetDate = q && (q.status === 'collecting' || q.status === 'ready');
 
   async function handleSaveDate() {
@@ -40,7 +43,19 @@ export default function Lottery() {
 
   async function handleDraw() {
     if (!q) return;
-    if (!confirm('确认开启抽签？抽签完成后将自动公示，结果不可修改。')) return;
+    if (precheck.hasBlocker) return;
+
+    if (precheck.hasWarning) {
+      setShowWarningConfirm(true);
+      return;
+    }
+
+    await executeDraw();
+  }
+
+  async function executeDraw() {
+    if (!q) return;
+    setShowWarningConfirm(false);
 
     setDrawing(true);
     setError(null);
@@ -155,14 +170,51 @@ export default function Lottery() {
                 </div>
               </div>
             ) : (
-              <button
-                onClick={handleDraw}
-                disabled={!canDraw}
-                className="w-full btn-accent py-4 text-lg flex items-center justify-center gap-3"
-              >
-                <Shuffle className="w-6 h-6" />
-                开启抽签
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={handleDraw}
+                  disabled={!canDraw}
+                  className="w-full btn-accent py-4 text-lg flex items-center justify-center gap-3"
+                >
+                  <Shuffle className="w-6 h-6" />
+                  {precheck.hasBlocker ? '存在阻塞项，无法抽签' : '开启抽签'}
+                </button>
+
+                {precheck.hasBlocker && (
+                  <div className="p-4 rounded-lg bg-red-50 border border-red-200">
+                    <div className="flex items-start gap-2">
+                      <XCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="font-medium text-red-700 mb-2">存在 {precheck.summary.blockerCount} 项阻塞，请先修复：</p>
+                        <ul className="space-y-1.5">
+                          {precheck.blockers.map((item, i) => (
+                            <li key={i} className="text-sm text-red-600 flex items-start gap-1.5">
+                              <span className="text-red-400">•</span>
+                              {item.message}
+                            </li>
+                          ))}
+                        </ul>
+                        <button
+                          onClick={() => navigate('/admin/applications')}
+                          className="mt-3 text-sm text-red-600 underline hover:text-red-800"
+                        >
+                          前往申请管理修复 →
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {!precheck.hasBlocker && precheck.hasWarning && (
+                  <div className="p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-700 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="font-medium">存在 {precheck.summary.warningCount} 项警告</p>
+                      <p className="mt-1">点击抽签将显示警告详情，确认后仍可继续</p>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {!canDraw && q && q.applications.length === 0 && (
@@ -206,6 +258,59 @@ export default function Lottery() {
           </li>
         </ol>
       </div>
+
+      {showWarningConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-slide-up">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-display text-lg font-bold text-gray-900 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                抽签前警告
+              </h3>
+              <button
+                onClick={() => setShowWarningConfirm(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-gray-700">
+                以下问题将导致抽签产生候补队列，是否确认继续？
+              </p>
+              <div className="space-y-2">
+                {precheck.warnings.map((item, i) => (
+                  <div key={i} className="p-3 rounded-lg bg-yellow-50 border border-yellow-200">
+                    <p className="text-sm text-yellow-700 font-medium flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                      {item.message}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                <p className="text-sm text-blue-700">
+                  <strong>注意：</strong>抽签完成后结果不可撤销，将自动进入公示状态。
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex gap-3">
+              <button
+                onClick={() => setShowWarningConfirm(false)}
+                className="btn-secondary flex-1"
+              >
+                取消
+              </button>
+              <button
+                onClick={executeDraw}
+                className="btn-accent flex-1"
+              >
+                确认继续抽签
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

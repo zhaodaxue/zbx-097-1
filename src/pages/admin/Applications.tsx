@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
-import { Plus, Edit2, Trash2, Search, Filter } from 'lucide-react';
+import { useEffect, useState, useRef } from 'react';
+import { Plus, Edit2, Trash2, Search, Filter, AlertTriangle, XCircle, AlertCircle, X, CheckCircle2 } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
 import { api } from '@/lib/api';
+import { runPrecheck, type PrecheckItem } from '@/lib/precheck';
 import type { Application, Category } from 'shared/types';
 import { CATEGORY_LABELS, STATUS_LABELS } from 'shared/types';
 
@@ -13,6 +14,9 @@ export default function Applications() {
   const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPrecheck, setShowPrecheck] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const rowRefs = useRef<Map<string, HTMLTableRowElement>>(new Map());
 
   const [form, setForm] = useState({
     vendorId: '',
@@ -28,12 +32,30 @@ export default function Applications() {
 
   const q = activeQuarter;
   const isEditable = q?.status === 'collecting';
+  const precheck = runPrecheck(q);
 
   const apps = q?.applications.filter(a => {
     const matchSearch = !search || a.vendorId.toLowerCase().includes(search.toLowerCase());
     const matchCat = filterCategory === 'all' || a.category === filterCategory;
     return matchSearch && matchCat;
   }) || [];
+
+  function scrollAndHighlight(appId: string) {
+    const row = rowRefs.current.get(appId);
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedId(appId);
+      setTimeout(() => setHighlightedId(null), 3000);
+    }
+  }
+
+  function handlePrecheckItemClick(item: PrecheckItem) {
+    if (item.applicationIds.length > 0) {
+      setSearch('');
+      setFilterCategory('all');
+      setTimeout(() => scrollAndHighlight(item.applicationIds[0]), 50);
+    }
+  }
 
   function resetForm() {
     setForm({ vendorId: '', category: 'vegetable', originalStallNumber: '', priorityRenewal: false, consecutiveMissedQuarters: 0 });
@@ -95,14 +117,33 @@ export default function Applications() {
           <h1 className="font-display text-2xl font-bold text-gray-900">申请管理</h1>
           <p className="text-sm text-gray-500 mt-1">共 {apps.length} 条申请记录</p>
         </div>
-        <button
-          onClick={openAdd}
-          disabled={!isEditable}
-          className="btn-primary flex items-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          新增申请
-        </button>
+        <div className="flex gap-3 flex-wrap">
+          <button
+            onClick={() => setShowPrecheck(true)}
+            className="btn-secondary flex items-center gap-2"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            预检
+            {precheck.summary.blockerCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-red-100 text-red-700 rounded-full">
+                {precheck.summary.blockerCount}
+              </span>
+            )}
+            {precheck.summary.warningCount > 0 && precheck.summary.blockerCount === 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded-full">
+                {precheck.summary.warningCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={openAdd}
+            disabled={!isEditable}
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            新增申请
+          </button>
+        </div>
       </div>
 
       <div className="card">
@@ -155,7 +196,15 @@ export default function Applications() {
             </thead>
             <tbody>
               {apps.map(a => (
-                <tr key={a.id} className="hover:bg-gray-50 transition-colors">
+                <tr
+                  key={a.id}
+                  ref={el => { if (el) rowRefs.current.set(a.id, el); }}
+                  className={`transition-colors duration-300 ${
+                    highlightedId === a.id
+                      ? 'bg-yellow-100 ring-2 ring-yellow-400'
+                      : 'hover:bg-gray-50'
+                  }`}
+                >
                   <td className="table-td font-mono text-xs text-gray-500">{a.id}</td>
                   <td className="table-td font-semibold">{a.vendorId}</td>
                   <td className="table-td">{CATEGORY_LABELS[a.category]}</td>
@@ -290,6 +339,106 @@ export default function Applications() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showPrecheck && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col animate-slide-up">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-display text-lg font-bold text-gray-900 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-yellow-600" />
+                录入预检
+              </h3>
+              <button
+                onClick={() => setShowPrecheck(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              {!precheck.hasBlocker && !precheck.hasWarning && (
+                <div className="text-center py-8">
+                  <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                  <p className="text-lg font-semibold text-green-700">预检通过</p>
+                  <p className="text-sm text-gray-500 mt-1">当前录入数据无异常，可以执行抽签</p>
+                </div>
+              )}
+
+              {precheck.blockers.length > 0 && (
+                <div>
+                  <h4 className="font-semibold text-red-700 flex items-center gap-2 mb-3">
+                    <XCircle className="w-4 h-4" />
+                    阻塞项 ({precheck.blockers.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {precheck.blockers.map((item, i) => (
+                      <button
+                        key={`b-${i}`}
+                        onClick={() => handlePrecheckItemClick(item)}
+                        disabled={item.applicationIds.length === 0}
+                        className={`w-full text-left p-3 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 transition-colors ${
+                          item.applicationIds.length === 0 ? 'cursor-default' : 'cursor-pointer'
+                        }`}
+                      >
+                        <p className="text-sm text-red-700 font-medium">{item.message}</p>
+                        {item.applicationIds.length > 0 && (
+                          <p className="text-xs text-red-500 mt-1">
+                            关联申请 ID：{item.applicationIds.join(', ')} · 点击定位
+                          </p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {precheck.warnings.length > 0 && (
+                <div>
+                  <h4 className="font-semibold text-yellow-700 flex items-center gap-2 mb-3">
+                    <AlertCircle className="w-4 h-4" />
+                    警告项 ({precheck.warnings.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {precheck.warnings.map((item, i) => (
+                      <button
+                        key={`w-${i}`}
+                        onClick={() => handlePrecheckItemClick(item)}
+                        className="w-full text-left p-3 rounded-lg border border-yellow-200 bg-yellow-50 hover:bg-yellow-100 transition-colors cursor-pointer"
+                      >
+                        <p className="text-sm text-yellow-700 font-medium">{item.message}</p>
+                        {item.applicationIds.length > 0 && (
+                          <p className="text-xs text-yellow-600 mt-1">
+                            关联申请 ID：{item.applicationIds.join(', ')} · 点击定位
+                          </p>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-600">
+                  {precheck.hasBlocker ? (
+                    <span className="text-red-600 font-medium">存在阻塞项，请先修复后再执行抽签</span>
+                  ) : precheck.hasWarning ? (
+                    <span className="text-yellow-600">存在警告项，抽签将产生候补队列</span>
+                  ) : (
+                    <span className="text-green-600">预检通过，可正常执行抽签</span>
+                  )}
+                </div>
+                <button
+                  onClick={() => setShowPrecheck(false)}
+                  className="btn-primary px-6"
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

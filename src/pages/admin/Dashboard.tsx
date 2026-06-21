@@ -9,8 +9,12 @@ import {
   Sprout,
   Fish,
   UtensilsCrossed,
+  XCircle,
+  AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import { useAppStore } from '@/store/appStore';
+import { runPrecheck } from '@/lib/precheck';
 import { CATEGORY_LABELS, STALL_CONFIG, QUARTER_STATUS_LABELS } from 'shared/types';
 
 export default function Dashboard() {
@@ -29,6 +33,9 @@ export default function Dashboard() {
     deli: q?.applications.filter(a => a.category === 'deli').length || 0,
   };
 
+  const precheck = runPrecheck(q);
+  const { blockerCount, warningCount } = precheck.summary;
+
   const statCards = [
     { label: '申请总数', value: totalApps, icon: Users, color: 'from-blue-500 to-blue-700' },
     { label: '蔬果类摊位', value: `${catCounts.vegetable}/${STALL_CONFIG.vegetable.length}`, icon: Sprout, color: 'from-green-500 to-green-700' },
@@ -37,9 +44,9 @@ export default function Dashboard() {
   ];
 
   const actions = [
-    { to: '/admin/applications', label: '录入摊主申请', icon: FileText, primary: true },
-    { to: '/admin/lottery', label: '执行抽签', icon: Shuffle, primary: true },
-    { to: '/admin/results', label: '查看公示结果', icon: Trophy, primary: false },
+    { to: '/admin/applications', label: '录入摊主申请', icon: FileText, primary: true, disabled: false },
+    { to: '/admin/lottery', label: '执行抽签', icon: Shuffle, primary: true, disabled: precheck.hasBlocker },
+    { to: '/admin/results', label: '查看公示结果', icon: Trophy, primary: false, disabled: false },
   ];
 
   return (
@@ -80,23 +87,82 @@ export default function Dashboard() {
       </div>
 
       <div className="card">
+        <h2 className="font-display text-lg font-bold text-gray-900 mb-4">录入预检</h2>
+        {blockerCount === 0 && warningCount === 0 ? (
+          <div className="flex items-center gap-3 p-4 rounded-lg bg-green-50 border border-green-200">
+            <CheckCircle2 className="w-6 h-6 text-green-600 flex-shrink-0" />
+            <div>
+              <p className="font-semibold text-green-700">预检通过</p>
+              <p className="text-sm text-green-600">当前录入数据无异常，可以执行抽签</p>
+            </div>
+          </div>
+        ) : (
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className={`p-4 rounded-lg border ${
+              blockerCount > 0 ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'
+            }`}>
+              <div className="flex items-center gap-3">
+                <XCircle className={`w-6 h-6 flex-shrink-0 ${blockerCount > 0 ? 'text-red-600' : 'text-gray-400'}`} />
+                <div>
+                  <p className={`text-2xl font-bold font-display ${blockerCount > 0 ? 'text-red-700' : 'text-gray-400'}`}>
+                    {blockerCount}
+                  </p>
+                  <p className={`text-sm ${blockerCount > 0 ? 'text-red-600' : 'text-gray-500'}`}>阻塞项</p>
+                </div>
+              </div>
+            </div>
+            <div className={`p-4 rounded-lg border ${
+              warningCount > 0 ? 'bg-yellow-50 border-yellow-200' : 'bg-gray-50 border-gray-200'
+            }`}>
+              <div className="flex items-center gap-3">
+                <AlertCircle className={`w-6 h-6 flex-shrink-0 ${warningCount > 0 ? 'text-yellow-600' : 'text-gray-400'}`} />
+                <div>
+                  <p className={`text-2xl font-bold font-display ${warningCount > 0 ? 'text-yellow-700' : 'text-gray-400'}`}>
+                    {warningCount}
+                  </p>
+                  <p className={`text-sm ${warningCount > 0 ? 'text-yellow-600' : 'text-gray-500'}`}>警告项</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        <button
+          onClick={() => navigate('/admin/applications')}
+          className="mt-4 w-full btn-secondary"
+        >
+          前往申请管理查看详情 →
+        </button>
+      </div>
+
+      <div className="card">
         <h2 className="font-display text-lg font-bold text-gray-900 mb-4">快捷操作</h2>
         <div className="grid sm:grid-cols-3 gap-3">
           {actions.map(act => (
             <button
               key={act.to}
-              onClick={() => navigate(act.to)}
+              onClick={() => !act.disabled && navigate(act.to)}
+              disabled={act.disabled}
+              title={act.disabled && blockerCount > 0 ? `存在 ${blockerCount} 项阻塞，请先修复` : undefined}
               className={`flex items-center justify-between p-4 rounded-xl border transition-all duration-200 ${
-                act.primary
-                  ? 'bg-primary-700 text-white border-primary-700 hover:bg-primary-600 hover:shadow-card-hover'
-                  : 'bg-white border-gray-200 hover:border-primary-300 hover:bg-primary-50'
+                act.disabled
+                  ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                  : act.primary
+                    ? 'bg-primary-700 text-white border-primary-700 hover:bg-primary-600 hover:shadow-card-hover cursor-pointer'
+                    : 'bg-white border-gray-200 hover:border-primary-300 hover:bg-primary-50 cursor-pointer'
               }`}
             >
               <div className="flex items-center gap-3">
                 <act.icon className="w-5 h-5" />
-                <span className="font-medium">{act.label}</span>
+                <div className="text-left">
+                  <span className="font-medium block">{act.label}</span>
+                  {act.disabled && blockerCount > 0 && (
+                    <span className="text-xs text-gray-400 mt-0.5 block">
+                      存在 {blockerCount} 项阻塞
+                    </span>
+                  )}
+                </div>
               </div>
-              <ArrowRight className="w-4 h-4 opacity-70" />
+              <ArrowRight className={`w-4 h-4 ${act.disabled ? 'opacity-30' : 'opacity-70'}`} />
             </button>
           ))}
         </div>
